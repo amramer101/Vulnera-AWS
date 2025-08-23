@@ -4,6 +4,7 @@ FROM rust:1.85-slim as builder
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     pkg-config \
+    build-essential \
     libssl-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
@@ -28,6 +29,7 @@ FROM debian:bookworm-slim
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    build-essential \
     curl \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
