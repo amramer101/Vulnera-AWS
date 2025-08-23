@@ -13,6 +13,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # Cache cargo dependencies
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Cache cargo index
+        uses: actions/cache@v3
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-git-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-git-
+
+      - name: Cache cargo build
+        uses: actions/cache@v3
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
       - name: Set up Rust
         uses: actions-rs/toolchain@v1
         with:
@@ -22,6 +47,7 @@ jobs:
       - name: Build Rust project
         run: cargo build --release
 
+      # Login to ACR
       - name: Azure Container Registry Login
         uses: azure/docker-login@v1
         with:
@@ -29,9 +55,11 @@ jobs:
           username: ${{ secrets.AZURE_ACR_USERNAME }}
           password: ${{ secrets.AZURE_ACR_PASSWORD }}
 
+      # Build Docker with build cache
       - name: Build Docker image
         run: |
           docker build \
+            --cache-from ecrvubnera.azurecr.io/vulnera-app:latest \
             --file scripts/docker/Dockerfile \
             -t ecrvubnera.azurecr.io/vulnera-app:latest \
             -t ecrvubnera.azurecr.io/vulnera-app:${{ github.sha }} .
