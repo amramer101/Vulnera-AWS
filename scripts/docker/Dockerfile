@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     build-essential \
     libssl-dev \
+    libsqlite3-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -30,6 +31,7 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     build-essential \
+    libsqlite3-0 \
     curl \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
