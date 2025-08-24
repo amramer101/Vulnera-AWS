@@ -1,4 +1,4 @@
-name: Build, Push & Deploy Vulnera to Azure Container Apps
+name: Build & Push Vulnera to ACR
 
 on:
   push:
@@ -8,10 +8,9 @@ on:
 env:
   IMAGE_NAME: vulnera-app
   DOCKERFILE_PATH: scripts/docker/Dockerfile
-  TARGET_PORT: "3000"
 
 jobs:
-  build-push-deploy:
+  build-and-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -60,87 +59,20 @@ jobs:
         run: az acr login --name ${{ secrets.ACR_NAME }}
 
       - name: Build Docker image
-        env:
-          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
         run: |
-          IMAGE="${ACR}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker build -f ${{ env.DOCKERFILE_PATH }} -t "${IMAGE}" -t "${ACR}/${{ env.IMAGE_NAME }}:latest" .
-          echo "image=${IMAGE}" >> $GITHUB_OUTPUT
-        id: build
+          ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+          IMAGE_TAG_SHA="${ACR_LOGIN_SERVER}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG_LATEST="${ACR_LOGIN_SERVER}/${{ env.IMAGE_NAME }}:latest"
+          
+          docker build -f ${{ env.DOCKERFILE_PATH }} -t "${IMAGE_TAG_SHA}" -t "${IMAGE_TAG_LATEST}" .
 
-      - name: Push Docker image
-        env:
-          ACR: ${{ secrets.ACR_LOGIN_SERVER }}
+      - name: Push Docker image to ACR
         run: |
-          IMAGE="${ACR}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          docker push "${ACR}/${{ env.IMAGE_NAME }}:latest"
-          docker push "${IMAGE}"
-
-      - name: Deploy (create or update) Azure Container App
-        # uses azure/container-apps-deploy-action is an alternative; here we use az CLI for explicit control
-        uses: azure/CLI@v1
-        with:
-          azcliversion: '2.58.0'
-          inlineScript: |
-            set -euo pipefail
-
-            RG="${{ secrets.AZURE_RESOURCE_GROUP }}"
-            APP="${{ secrets.CONTAINERAPP_NAME }}"
-            ENV_NAME="${{ secrets.CONTAINERAPPS_ENV }}"
-            ACR_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
-            IMAGE="${ACR_SERVER}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-            TARGET_PORT="${{ env.TARGET_PORT }}"
-
-            echo "Checking if Container App '${APP}' exists in resource group '${RG}'..."
-            if az containerapp show -g "$RG" -n "$APP" >/dev/null 2>&1; then
-              echo "Container App exists -> updating image and env vars (creating a new revision)..."
-              az containerapp update \
-                --name "$APP" \
-                --resource-group "$RG" \
-                --image "$IMAGE" \
-                --target-port $TARGET_PORT \
-                --set-env-vars \
-                  VULNERA__SERVER__HOST='0.0.0.0' \
-                  VULNERA__SERVER__PORT='3000' \
-                  VULNERA__CACHE__DIRECTORY='.vulnera_cache' \
-                  VULNERA__CACHE__TTL_HOURS='24' \
-                  VULNERA__ANALYSIS__MAX_CONCURRENT_PACKAGES='3' \
-                  VULNERA__RECOMMENDATIONS__EXCLUDE_PRERELEASES='false' \
-                  VULNERA__RECOMMENDATIONS__MAX_VERSION_QUERIES_PER_REQUEST='50' \
-                  VULNERA__LOGGING__LEVEL='info' \
-                  VULNERA__LOGGING__FORMAT='json' \
-                  ENV='production' \
-                  VULNERA__SERVER__ALLOWED_ORIGINS__0='${{ secrets.CORS_ALLOWED_ORIGIN }}' \
-                  VULNERA__SERVER__ALLOWED_ORIGINS__1='${{ secrets.CORS_ALLOWED_ORIGIN_SECONDARY }}' \
-                  VULNERA__APIS__NVD__API_KEY='${{ secrets.NVD_API_KEY }}' \
-                  VULNERA__APIS__GHSA__TOKEN='${{ secrets.GHSA_TOKEN }}'
-            else
-              echo "Container App does not exist -> creating it..."
-              az containerapp create \
-                --name "$APP" \
-                --resource-group "$RG" \
-                --environment "$ENV_NAME" \
-                --image "$IMAGE" \
-                --target-port $TARGET_PORT \
-                --ingress external \
-                --registry-server "$ACR_SERVER" \
-                --registry-user "${{ secrets.ACR_USERNAME }}" \
-                --registry-password "${{ secrets.ACR_PASSWORD }}" \
-                --env-vars \
-                  VULNERA__SERVER__HOST='0.0.0.0' \
-                  VULNERA__SERVER__PORT='3000' \
-                  VULNERA__CACHE__DIRECTORY='.vulnera_cache' \
-                  VULNERA__CACHE__TTL_HOURS='24' \
-                  VULNERA__ANALYSIS__MAX_CONCURRENT_PACKAGES='3' \
-                  VULNERA__RECOMMENDATIONS__EXCLUDE_PRERELEASES='false' \
-                  VULNERA__RECOMMENDATIONS__MAX_VERSION_QUERIES_PER_REQUEST='50' \
-                  VULNERA__LOGGING__LEVEL='info' \
-                  VULNERA__LOGGING__FORMAT='json' \
-                  ENV='development' \
-                  VULNERA__SERVER__ALLOWED_ORIGINS__0='${{ secrets.CORS_ALLOWED_ORIGIN }}' \
-                  VULNERA__SERVER__ALLOWED_ORIGINS__1='${{ secrets.CORS_ALLOWED_ORIGIN_SECONDARY }}' \
-            fi
-
-      - name: Show Container App URL
-        run: |
-          az containerapp show --name ${{ secrets.CONTAINERAPP_NAME }} --resource-group ${{ secrets.AZURE_RESOURCE_GROUP }} --query properties.configuration.ingress.fqdn -o tsv
+          ACR_LOGIN_SERVER="${{ secrets.ACR_LOGIN_SERVER }}"
+          IMAGE_TAG_SHA="${ACR_LOGIN_SERVER}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          IMAGE_TAG_LATEST="${ACR_LOGIN_SERVER}/${{ env.IMAGE_NAME }}:latest"
+          
+          docker push "${IMAGE_TAG_SHA}"
+          docker push "${IMAGE_TAG_LATEST}"
+          
+          echo "Successfully pushed image to ACR: ${IMAGE_TAG_SHA}"
